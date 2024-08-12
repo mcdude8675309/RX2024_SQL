@@ -1,4 +1,5 @@
 --Identify When non-staff changes Gender, BirthDate, Nickname, or FirstName 
+--This is an opportunity for pastoral care, or to potentially catch mistakes that put people in the wrong groups
 select
 	h.EntityID as PersonID,
 	h.CreatedDateTime As ChangeDateTime,
