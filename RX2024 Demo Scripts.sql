@@ -356,6 +356,7 @@ should be used, although it doesn't guarantee no collisions, the probability is 
 Note 2: Watch for datatype pitfall here...
 **************************************************************************************************************************************************/
 
+--Lookup some of my attribute values.  Pretty fast huh?  (must be using an index)
 SELECT TOP 100 a.Name, av.* 
 FROM dbo.AttributeValue av
 JOIN dbo.Attribute a ON a.Id = av.AttributeId
