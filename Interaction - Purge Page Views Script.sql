@@ -1,3 +1,11 @@
+/****************************************************************************************************
+
+NOTE: THIS SCRIPT IS HERE AS AN EXAMPLE ONLY 
+THIS IS JUST ONE POSSIBLE WAY OF DOING THIS
+
+Rock has a built in way to purge Page Views from interactions that should be used instead.
+****************************************************************************************************/
+
 --Identify and Purge Page Views older than 1 year from Interaction table.  (Almost half the table)
 
 --SELECT COUNT(*) --28871848
@@ -7,14 +15,12 @@
 --WHERE ich.ChannelTypeMediumValueId IN (3046, 3051)
 --AND I.InteractionDateTime < '2023-06-05'
 
---DBCC CLEANTABLE (rocktrain, person, 1000)
---name	rows	reserved	data	index_size	unused
---Person	359888              	701072 KB	164208 KB	455168 KB	81696 KB
-
+--Build work table
 DROP TABLE IF EXISTS #ids
 CREATE TABLE #ids (RowId INT NOT NULL PRIMARY KEY IDENTITY(1,1), Id INT NOT NULL);
 SELECT TOP 1000 * FROM #ids ORDER BY 1
 
+--Populate work table with the data to process
 INSERT INTO #ids SELECT i.Id
 FROM dbo.Interaction i
 JOIN dbo.InteractionComponent ic ON ic.Id = i.InteractionComponentId
@@ -31,9 +37,10 @@ DECLARE @RowsToDelete INT = 1000
 DECLARE @TotalRowsToDelete INT = (SELECT COUNT(*) FROM #ids)
 DECLARE @TotalRowsDeleted INT = 0
 DECLARE @msg NVARCHAR(1000) = ''
+DECLARE @DoIt Bit = 0 --<-- Set this to 1 to actually delete records - Safety Check!
 SELECT 'Debug', @CurrId AS CurrId, @RowsToDelete AS RowsPerBatch, @TotalRowsToDelete AS TotalRowsToDelete
 
-WHILE @CurrId <= @TotalRowsToDelete --1=1
+WHILE (@CurrId <= @TotalRowsToDelete AND @DoIt = 1)
 BEGIN
 
     BEGIN TRAN
@@ -66,8 +73,7 @@ END
 --rollback
 /*
 --Before
-name	    rows	    reserved	data	    index_size	unused
-Interaction	54376978    37345504 KB	7801592 KB	21376704 KB	8167208 KB
+
 
 --After
 
