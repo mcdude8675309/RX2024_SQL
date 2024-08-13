@@ -1,42 +1,8 @@
-/**************************************************************************************************************************************************
-Demo - Connecting to the Read-Only Replica
-Change your connection
-**************************************************************************************************************************************************/
- --First Where are we now?
- SELECT DATABASEPROPERTYEX(DB_NAME(), 'Updateability');
-
- -->> Amazing Visual coming up <<-- Prepare to be amazed
-
- --How about now?
-  SELECT DATABASEPROPERTYEX(DB_NAME(), 'Updateability')
-
---Don't believe me?
-CREATE TABLE JeffTest(Id INT);
-
-/*************************************************************************************************************************************************
-Demo - Reading Query Plans
-Bottom to top, and right to left
---> Bubba's Phone Number
-**************************************************************************************************************************************************/
-SELECT FirstName, LastName, pn.NumberFormatted
-FROM dbo.Person p
-INNER JOIN PhoneNumber pn ON pn.PersonId = p.Id
-WHERE p.FirstName = 'Bubba'
-AND LastName = 'McDude'
---AND p.IsDeceased = 0
-
-/* --Note Two very similar indexes on Person table.  This is to support name search from either direction - first/last
-CREATE NONCLUSTERED INDEX [IX_IsDeceased_FirstName_LastName] ON [dbo].[Person] ([IsDeceased], [FirstName], [LastName]) WITH (FILLFACTOR=80) ON [PRIMARY]
-GO
-CREATE NONCLUSTERED INDEX [IX_IsDeceased_LastName_FirstName] ON [dbo].[Person] ([IsDeceased], [LastName], [FirstName]) WITH (FILLFACTOR=80) ON [PRIMARY]
-GO
+/*
+    RX2024 A SQL Server Love Store
+    08/12/2024 Jeff McClure
+    Demo Scripts
 */
-
-/**************************************************************************************************************************************************
-Viewing IO for a Query
-**************************************************************************************************************************************************/
-SET STATISTICS IO ON
---SET STATISTICS IO OFF
 
 /**************************************************************************************************************************************************
 Viewing Who is active on the server.  (hint - set a hotkey for this!) For me it's Ctrl-4
@@ -45,6 +11,62 @@ EXEC sp_who2 Active;
 
 --Alternatively: https://whoisactive.com/downloads/
 EXEC dbo.sp_WhoIsActive 
+
+/**************************************************************************************************************************************************
+Connecting to the Read-Only Replica
+Requires a change your connection string
+--Can offload Analytics and Reporting Queries
+--Still have access to TempDB and #objects
+**************************************************************************************************************************************************/
+ --First Where are we now?
+ SELECT DATABASEPROPERTYEX(DB_NAME(), 'Updateability');
+
+--If still unsure, try to create a table and see what happens
+CREATE TABLE dbo.JeffTest_MayDelete_20240812(Id INT);
+
+/**************************************************************************************************************************************************
+Viewing IO for a Query - Super useful for helping to hint at the problem
+**************************************************************************************************************************************************/
+SET STATISTICS IO ON
+--SET STATISTICS IO OFF
+
+/*************************************************************************************************************************************************
+Demo - Reading Query Plans - Bubba's Cell Phone Number
+Bottom to top, and right to left
+--> Enable Actual Query Plan (button)
+Some Things to Look for:
+    Missing Index Scripts
+    Clustered Index Scan OR Table Scan (the latter applies only to Heaps)
+    Thick Arrows (bad)
+    Parallelism (Not necessarily bad, but expensive)
+    Actual Rows Read (Hover over operation to see)
+    Cost Comparisons of multiple queries
+**************************************************************************************************************************************************/
+
+SELECT FirstName, LastName, pn.NumberFormatted
+FROM dbo.Person p
+INNER JOIN PhoneNumber pn ON pn.PersonId = p.Id
+WHERE p.FirstName = 'Bubba'
+AND p.LastName = 'McDude'
+
+--We have an index - why isn't it used?
+--  CREATE NONCLUSTERED INDEX [IX_IsDeceased_FirstName_LastName]
+--  ON [dbo].[Person] ([IsDeceased], [FirstName], [LastName]) WITH (FILLFACTOR=80) ON [PRIMARY]
+
+--Now we are using the index: NOTICE order or filters in the where clause isn't typically important
+SELECT FirstName, LastName, pn.NumberFormatted
+FROM dbo.Person p
+INNER JOIN PhoneNumber pn ON pn.PersonId = p.Id
+WHERE p.FirstName = 'Bubba'
+AND p.LastName = 'McDude'
+AND p.IsDeceased = 0
+
+/* --Note Two very similar indexes on Person table.  This is to support name search from either direction - first/last
+CREATE NONCLUSTERED INDEX [IX_IsDeceased_FirstName_LastName] ON [dbo].[Person] ([IsDeceased], [FirstName], [LastName]) WITH (FILLFACTOR=80) ON [PRIMARY]
+GO
+CREATE NONCLUSTERED INDEX [IX_IsDeceased_LastName_FirstName] ON [dbo].[Person] ([IsDeceased], [LastName], [FirstName]) WITH (FILLFACTOR=80) ON [PRIMARY]
+GO
+*/
 
 
 /**************************************************************************************************************************************************
@@ -61,7 +83,7 @@ INNER JOIN dbo.GroupMember gm ON gm.PersonId = p.Id
 INNER JOIN dbo.[Group] g ON g.Id = gm.GroupId
 WHERE p.FirstName = 'Bubba'
 AND LastName = 'McDude'
---AND p.IsDeceased = 0
+AND p.IsDeceased = 0
 
 
 /**************************************************************************************************************************************************
@@ -70,7 +92,8 @@ Join Examples
 Left [OUTER], 
 CROSS JOIN
 **************************************************************************************************************************************************/
---Select All Jeffs with their Cell #s
+--Inner Join 
+--Select All Bubba's with Cell #s
 SELECT CONCAT(NickName, ' ', LEFT(LastName, 1), '.') AS NAME, NumberFormatted
 FROM dbo.Person p
 INNER JOIN dbo.PhoneNumber pn ON pn.PersonId = p.Id
@@ -79,15 +102,19 @@ AND p.NickName = 'Bubba'
 AND p.IsDeceased = 0
 ORDER BY Name
 
+--Outer Join
 --What if I want to see all Bubbas even if they don't have a cell number?
+--Switch to Left Outer Join 
+--Move filter on the Outer Join Table into the Join stmt
 SELECT CONCAT(NickName, ' ', LEFT(LastName, 1), '.') AS NAME, NumberFormatted
 FROM dbo.Person p
 LEFT OUTER JOIN dbo.PhoneNumber pn ON pn.PersonId = p.Id 
-    AND pn.NumberTypeValueId = 12 --Cell --<<<--NOTE, I had to move this into the JOIN otherwise it was forcing existence in the Where same as an Inner Join
+    AND pn.NumberTypeValueId = 12 --Cell --<<<--NOTE, I had to move this into the OUTER JOIN otherwise it was forcing existence in the Where same as an Inner Join
 WHERE p.NickName = 'Bubba'
 AND p.IsDeceased = 0
 ORDER BY Name
 
+--Cross Join
 --Believe it or not there are some very practical uses for Cross Join, but I rarely use them
 SELECT Campus.Name, Site.Name
 FROM dbo.Campus
@@ -112,12 +139,14 @@ Complex Query Plan with Parallelism and Missing Index Suggestion
     AND a.StartDateTime >= '2024-08-01'
     --ORDER BY g.name
 )
-SELECT p.firstname, groupattendance.GroupName, groupattendance.StartDateTime, GrpAttendences
+SELECT p.firstname, groupattendance.GroupName, groupattendance.StartDateTime, TotalGroupAttendences
 FROM Person p 
 LEFT OUTER JOIN groupattendance ON groupattendance.PersonId = p.id AND groupattendance.Rowid = 1
 WHERE p.createddatetime >= '2024-08-01'
 AND p.RecordTypeValueId <> 4550
 ORDER BY groupattendance.GroupName
+
+--To see only people that have been created AND have attended any group, change the join above from LEFT OUTER to INNER
 
 
 /**************************************************************************************************************************************************
@@ -356,7 +385,6 @@ should be used, although it doesn't guarantee no collisions, the probability is 
 Note 2: Watch for datatype pitfall here...
 **************************************************************************************************************************************************/
 
---Lookup some of my attribute values.  Pretty fast huh?  (must be using an index)
 SELECT TOP 100 a.Name, av.* 
 FROM dbo.AttributeValue av
 JOIN dbo.Attribute a ON a.Id = av.AttributeId
@@ -365,31 +393,34 @@ WHERE EntityId = 319854
 --> But what if all we know is the value and we have to find all the rows with that value in the massive junk drawer?? c143ca2f-ab2d-418f-87ea-5beeacb75f06
 Set Statistics Io ON;
 --Set Statistics Io Off
-SELECT COUNT(*)
+SELECT COUNT(*) AS Cnt
 FROM dbo.AttributeValue
 WHERE Value = '800d6025-d35e-4833-8376-ccdad717f215'
 
 /*
 Yuck!
-Table 'AttributeValue'. Scan count 7, logical reads 106227, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 36676, lob physical reads 0, lob page server reads 0, lob read-ahead reads 1805, lob page server read-ahead reads 0.
+Table 'AttributeValue'. Scan count 7, logical reads 107301, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 36676, lob physical reads 0, lob page server reads 0, lob read-ahead reads 1805, lob page server read-ahead reads 0.
 Table 'Worktable'. Scan count 0, logical reads 0, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 */
 --Note the index used in the query plan is from the DTA (Database Tuning Advisor)  Google it...
 
 --Now, let's leverage the power of Checksum to find the answer much quicker! 
-SELECT COUNT(*)
+SELECT COUNT(*) AS Cnt
 FROM dbo.AttributeValue
 WHERE ValueChecksum = CHECKSUM('800d6025-d35e-4833-8376-ccdad717f215')
 AND Value = '800d6025-d35e-4833-8376-ccdad717f215'
 
+---Sure was fast, but NO Records!! But we know they are there. What happened?
 
---WAIT, why didn't this work any faster?!?!?!  Case sensitivity? Nope...
---Do you know the different between Varchar and NVarchar??
 --Since Value is store as NVARCHAR, you have to run the checksum against that correct dataype
-SELECT COUNT(*)
+SELECT COUNT(*) AS Cnt
 FROM dbo.AttributeValue
 WHERE ValueChecksum = CHECKSUM(N'800d6025-d35e-4833-8376-ccdad717f215')
 AND Value = N'800d6025-d35e-4833-8376-ccdad717f215'
+
+
+--(1 row affected)
+--Table 'AttributeValue'. Scan count 1, logical reads 847, physical reads 12, page server reads 0, read-ahead reads 9, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
 
 /**************************************************************************************************************************************************
 Case Sensitive Searching
@@ -400,13 +431,15 @@ Case Sensitive Searching
     BIN: Binary. Sorting and comparison are done based on the numeric value of the characters, which is case-sensitive and accent-sensitive by default.
 **************************************************************************************************************************************************/
 
+--See all Groups with HIGH as the first 4 letters
 SELECT Id, Name, Description
 FROM dbo.[GROUP]
-WHERE Name LIKE N'blood%' COLLATE Latin1_General_CS_AS
+WHERE Name LIKE N'HIGH%'
 
+--Same, except only where HIGH is Capitalized
 SELECT Id, Name, Description
 FROM dbo.[GROUP]
-WHERE Name LIKE N'blood%' COLLATE Latin1_General_CI_AS
+WHERE Name LIKE N'HIGH%' COLLATE Latin1_General_CS_AS
 
 
 -- Creating a table with a case-sensitive collation
@@ -426,6 +459,13 @@ WHERE Name = 'test';
 --We also see it here if we override the collation
 SELECT * FROM #ExampleTable
 WHERE Name = 'Test' COLLATE Latin1_General_CI_AS;
+
+
+/**************************************************************************************************************************************************
+Extended Events Demo - If time allows.  
+If we can't do this in the session, I can schedule a webinar to demo this powerful tool
+Let me know in the survey, or hit me up on RocketChat
+**************************************************************************************************************************************************/
 
 
 /**************************************************************************************************************************************************
@@ -459,12 +499,7 @@ ON p.[object_id] = mid.[object_id]
 WHERE mid.database_id = DB_ID()
 AND p.index_id < 2 
 ORDER BY index_advantage DESC OPTION (RECOMPILE);
-------
 
-
-/**************************************************************************************************************************************************
-Extended Events Demo - If time allows.  
-If we can't do this in the session, I can schedule a webinar to demo this powerful tool
-Let me know in the survey, or hit me up on RocketChat
-**************************************************************************************************************************************************/
-
+/*
+THE END
+*/
