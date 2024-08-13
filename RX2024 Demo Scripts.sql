@@ -462,6 +462,26 @@ WHERE Name = 'Test' COLLATE Latin1_General_CI_AS;
 
 
 /**************************************************************************************************************************************************
+HAIL MARY Performace Tools
+**************************************************************************************************************************************************/
+--Clears the procedure cache and will force every query to be recompiled on the next execution.
+--This has saved my bacon more than once.
+--Useful when one super important query or process is performing poorly when everything else seems fine.
+DBCC FREEPROCCACHE
+
+--Similar to above but this will recompile all queries that access a certain table.  
+--Seems odd to recompile a table, but it works
+EXEC sp_recompile [group]
+
+--Update the statistics for a specific table. 
+UPDATE STATISTICS [TableName]
+
+--Update statistice for every table and index in the database.
+--Takes a long time, but doesn't cause blocking or add much contention
+EXEC sp_updatestats
+
+
+/**************************************************************************************************************************************************
 Extended Events Demo - If time allows.  
 If we can't do this in the session, I can schedule a webinar to demo this powerful tool
 Let me know in the survey, or hit me up on RocketChat
