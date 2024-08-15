@@ -1,5 +1,5 @@
 /*
-    RX2024 A SQL Server Love Store
+    RX2024 A SQL Server Love Story
     08/12/2024 Jeff McClure
     Demo Scripts
 */
@@ -18,11 +18,13 @@ Requires a change your connection string
 --Can offload Analytics and Reporting Queries
 --Still have access to TempDB and #objects
 **************************************************************************************************************************************************/
- --First Where are we now?
+ --First Where are we now? READ_WRITE or READ_ONLY
  SELECT DATABASEPROPERTYEX(DB_NAME(), 'Updateability');
 
 --If still unsure, try to create a table and see what happens
+DROP TABLE IF EXISTS dbo.JeffTest_MayDelete_20240812
 CREATE TABLE dbo.JeffTest_MayDelete_20240812(Id INT);
+DROP TABLE IF EXISTS dbo.JeffTest_MayDelete_20240812
 
 /**************************************************************************************************************************************************
 Viewing IO for a Query - Super useful for helping to hint at the problem
@@ -32,7 +34,7 @@ SET STATISTICS IO ON
 
 /*************************************************************************************************************************************************
 Demo - Reading Query Plans - Bubba's Cell Phone Number
-Bottom to top, and right to left
+Remember: Read Bottom to top, and right to left
 --> Enable Actual Query Plan (button)
 Some Things to Look for:
     Missing Index Scripts
@@ -45,13 +47,16 @@ Some Things to Look for:
 
 SELECT FirstName, LastName, pn.NumberFormatted
 FROM dbo.Person p
-INNER JOIN PhoneNumber pn ON pn.PersonId = p.Id
-WHERE p.FirstName = 'Bubba'
+INNER JOIN PhoneNumber pn ON pn.PersonId = p.Id --Inner Join means the record MUST exists in both tables to be returned
+WHERE p.FirstName = 'Bubba'     
 AND p.LastName = 'McDude'
 
---We have an index - why isn't it used?
---  CREATE NONCLUSTERED INDEX [IX_IsDeceased_FirstName_LastName]
---  ON [dbo].[Person] ([IsDeceased], [FirstName], [LastName]) WITH (FILLFACTOR=80) ON [PRIMARY]
+EXEC sp_helpindex Person
+/*
+We have an index - why isn't it used?  Here's the definition:
+  CREATE NONCLUSTERED INDEX [IX_IsDeceased_FirstName_LastName]
+  ON [dbo].[Person] ([IsDeceased], [FirstName], [LastName]) WITH (FILLFACTOR=80) ON [PRIMARY]
+*/
 
 --Now we are using the index: NOTICE order or filters in the where clause isn't typically important
 SELECT FirstName, LastName, pn.NumberFormatted
@@ -127,7 +132,7 @@ Complex Query Plan with Parallelism and Missing Index Suggestion
 **************************************************************************************************************************************************/
 --Row_Number Patition Function for finding most recent group attendance for a list of people
 --DECLARE @StartDate DATETIME = '2024-07-01'
-;WITH groupattendance AS(
+;WITH groupattendance AS (
     SELECT pa.PersonId, g.name AS GroupName, a.StartDateTime
         , ROW_NUMBER() OVER(PARTITION BY pa.PersonId ORDER BY a.StartDateTime DESC) AS Rowid
         , SUM(CAST(a.DidAttend AS INT)) OVER(PARTITION BY g.Name) AS TotalGroupAttendences
@@ -136,15 +141,15 @@ Complex Query Plan with Parallelism and Missing Index Suggestion
     JOIN dbo.Attendance a ON a.OccurrenceId = ao.Id
     JOIN dbo.PersonAlias pa ON pa.Id = a.PersonAliasId
     WHERE a.DidAttend = 1
-    AND a.StartDateTime >= '2024-08-01'
+    AND a.StartDateTime >= '2024-08-07'
     --ORDER BY g.name
 )
-SELECT p.firstname, groupattendance.GroupName, groupattendance.StartDateTime, TotalGroupAttendences
+SELECT p.firstname, gt.GroupName, gt.StartDateTime, TotalGroupAttendences
 FROM Person p 
-LEFT OUTER JOIN groupattendance ON groupattendance.PersonId = p.id AND groupattendance.Rowid = 1
-WHERE p.createddatetime >= '2024-08-01'
+JOIN groupattendance gt ON gt.PersonId = p.id AND gt.Rowid = 1 --Don't forget Inner Join is a type of Filter!
+WHERE p.createddatetime >= '2024-08-07'
 AND p.RecordTypeValueId <> 4550
-ORDER BY groupattendance.GroupName
+ORDER BY gt.GroupName
 
 --To see only people that have been created AND have attended any group, change the join above from LEFT OUTER to INNER
 
@@ -194,9 +199,11 @@ WHERE st.Name = 'Person' --Table Name Here
 GROUP BY st.Name, si.fill_factor, si.index_id, si.name
 ORDER BY st.Name, si.index_id
 
+--View Index Fragmentation:
+SELECT * FROM sys.dm_db_index_physical_stats (DB_ID(), OBJECT_ID(N'dbo.AttributeValue'), NULL, NULL , 'SAMPLED');  --LIMITED, SAMPLED, or DETAILED
 
 /* 
-    MEGA INDEX INFO SCRIPT -- Mega Better
+    McDude's MEGA INDEX INFO SCRIPT -- It's Mega Better
     Table rows and usage info - Index level granularity
     Shows ALL indexes and usage (since last service restart) for any given table
 */
@@ -234,7 +241,7 @@ LEFT OUTER JOIN (
 ) indexcolumns ON indexcolumns.TableName = so.name 
     AND indexcolumns.index_id = si.index_id
 WHERE so.type = 'u' --User Table
-AND so.name = 'AttributeValue' ---<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Table name goes here!
+AND so.name = 'Person' ---<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Table name goes here!
 --AND (user_seeks = 0 AND User_Scans = 0 AND User_Lookups = 0) --<<<<<<<<<<<<<<<<<<<<<< Uncomment to see only Indxes WITHOUT user activity --Candidates for deletion BE CAREFUL!
 AND is_ms_shipped = 0
 ORDER BY so.name, si.index_id
@@ -307,7 +314,8 @@ DECLARE @Rows INT = 1
 WHILE @Rows > 0 
 BEGIN
 
-    DELETE TOP(1000) pb --select count(*)
+    --DELETE TOP(1000) pb 
+    SELECT id
     FROM dbo.PersonBackup_MAYDELETE pb
     WHERE Birthdate >= '1/1/2000'
     SELECT @Rows = @@ROWCOUNT
@@ -489,8 +497,6 @@ Let me know in the survey, or hit me up on RocketChat
 
 
 /**************************************************************************************************************************************************
-BONUS:
-
 Missing Indexs By Index Advantage
 --Thanks Glenn Berry!
 
