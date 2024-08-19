@@ -42,7 +42,7 @@ DECLARE @RowsPerBatch INT = 1000;
 DECLARE @RowsDeleted INT = 1;
 DECLARE @TotalRowsDeleted INT = 0;
 DECLARE @Msg NVARCHAR(1000) = ''
-DECLARE @DoIt Bit = 1; --<-- Set this to 1 to actually delete records - Safety Check!
+DECLARE @DoIt Bit = 0; --<-- Set this to 1 to actually delete records - Safety Check!
 DECLARE @IdsToDelete TABLE(Id INT PRIMARY KEY);
 SELECT 'Starting Purge', @TotalRowsToDelete AS TotalRowsToDelete;
 
